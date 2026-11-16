@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.electrodomesticos.registry.data.local.ApplianceSqliteRepository
 import com.electrodomesticos.registry.data.model.CatalogAppliance
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -113,5 +115,63 @@ class ApplianceSqliteRepositoryTest {
 
     repository.delete(id)
     assertNull(repository.getById(id))
+  }
+
+  @Test
+  fun `exports SQLite database and imports it cleanly into another repository`() {
+    repository.insert(
+      CatalogAppliance(
+        tipo = "refrigerador",
+        marca = "LG",
+        capacidad = "420 litros",
+        color = "Silver",
+        precio = "2899.00",
+        imageUrl = "https://example.com/lg.jpg",
+        htmlContent = "<h1>LG Silver</h1>",
+      )
+    )
+    repository.insert(
+      CatalogAppliance(
+        tipo = "lavadora",
+        marca = "Samsung",
+        capacidad = "22 kg",
+        color = "Negro",
+        precio = null,
+        imageUrl = "https://example.com/samsung.jpg",
+        htmlContent = "<h1>Samsung 22kg</h1>",
+      )
+    )
+
+    val exportedBytes = ByteArrayOutputStream().use { out ->
+      repository.exportDatabaseTo(out)
+      out.toByteArray()
+    }
+    assertTrue(exportedBytes.isNotEmpty())
+
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val targetRepo = ApplianceSqliteRepository(context, dbName = "test_import_${System.nanoTime()}.db")
+    try {
+      // Pre-existing row should be cleanly replaced on restore
+      targetRepo.insert(
+        CatalogAppliance(
+          tipo = "TV",
+          marca = "Old",
+          capacidad = "32\"",
+          color = "Negro",
+          imageUrl = "",
+          htmlContent = "",
+        )
+      )
+
+      val importedCount = targetRepo.importDatabaseFrom(ByteArrayInputStream(exportedBytes))
+      assertEquals(2, importedCount)
+
+      val all = targetRepo.getAll()
+      assertEquals(2, all.size)
+      assertTrue(all.any { it.marca == "LG" && it.precio == "2899.00" && it.htmlContent == "<h1>LG Silver</h1>" })
+      assertTrue(all.any { it.marca == "Samsung" && it.precio == null && it.capacidad == "22 kg" })
+    } finally {
+      targetRepo.close()
+    }
   }
 }
