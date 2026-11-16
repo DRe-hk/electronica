@@ -22,6 +22,7 @@ Aplicación Android (Kotlin + Jetpack Compose + SQLite) enfocada en el escaneo r
   - Botones **Editar** y **Ver más**
 - **Edición completa** de todos los campos tanto antes de insertar como después de guardar en **SQLite**.
 - **Vista "Ver más"** con renderizado HTML nativo tal cual se recibe mediante `WebView`.
+- **Exportar e Importar Base de Datos (`.db`)**: Respalda y restaura todo el catálogo SQLite (`electro_catalogo.db`) directamente desde los botones **Exportar BD** e **Importar BD**.
 - Búsqueda instantánea por texto y filtros dinámicos por tipo de producto.
 
 ---
