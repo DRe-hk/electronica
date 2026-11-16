@@ -1,9 +1,13 @@
 package com.electrodomesticos.registry.ui.catalog
 
-import android.annotation.SuppressLint
+import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -28,6 +32,7 @@ import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -54,6 +59,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -349,10 +355,13 @@ private fun AddEditApplianceDialog(
 ) {
   @Suppress("DEPRECATION")
   val clipboardManager = LocalClipboardManager.current
+  val context = LocalContext.current
   val isEditing = initialItem != null
 
   var jsonInput by remember(initialItem) { mutableStateOf(initialItem?.rawJson.orEmpty()) }
   var htmlInput by remember(initialItem) { mutableStateOf(initialItem?.htmlContent.orEmpty()) }
+  var importedHtmlFileName by remember(initialItem) { mutableStateOf<String?>(null) }
+  var fileImportError by remember { mutableStateOf<String?>(null) }
   var tipo by remember(initialItem) { mutableStateOf(initialItem?.tipo.orEmpty()) }
   var marca by remember(initialItem) { mutableStateOf(initialItem?.marca.orEmpty()) }
   var capacidad by remember(initialItem) { mutableStateOf(initialItem?.capacidad.orEmpty()) }
@@ -372,6 +381,37 @@ private fun AddEditApplianceDialog(
     if (parsed.codigo.isNotBlank()) codigo = parsed.codigo
     if (parsed.htmlContent.isNotBlank() && htmlInput.isBlank()) {
       htmlInput = parsed.htmlContent
+    }
+  }
+
+  val htmlFilePicker = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.OpenDocument(),
+  ) { uri: Uri? ->
+    if (uri == null) return@rememberLauncherForActivityResult
+    val result = readTextFileFromUri(context, uri)
+    if (result == null) {
+      fileImportError = "No se pudo leer el archivo HTML seleccionado."
+    } else {
+      val (fileName, content) = result
+      fileImportError = null
+      importedHtmlFileName = fileName
+      htmlInput = content
+      applyParsedPayload(jsonInput, content)
+    }
+  }
+
+  val jsonFilePicker = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.OpenDocument(),
+  ) { uri: Uri? ->
+    if (uri == null) return@rememberLauncherForActivityResult
+    val result = readTextFileFromUri(context, uri)
+    if (result == null) {
+      fileImportError = "No se pudo leer el archivo JSON seleccionado."
+    } else {
+      val (_, content) = result
+      fileImportError = null
+      jsonInput = content
+      applyParsedPayload(content, htmlInput)
     }
   }
 
@@ -416,7 +456,7 @@ private fun AddEditApplianceDialog(
             verticalArrangement = Arrangement.spacedBy(8.dp),
           ) {
             Text(
-              text = "1. Pegar JSON y/o HTML",
+              text = "1. Pegar o importar JSON y HTML",
               style = MaterialTheme.typography.titleSmall,
               fontWeight = FontWeight.Bold,
             )
@@ -444,6 +484,7 @@ private fun AddEditApplianceDialog(
                 onClick = {
                   val clip = clipboardManager.getText()?.text.orEmpty()
                   if (clip.isNotBlank()) {
+                    importedHtmlFileName = null
                     htmlInput = clip
                     applyParsedPayload(jsonInput, clip)
                   }
@@ -454,6 +495,49 @@ private fun AddEditApplianceDialog(
                 Spacer(Modifier.width(4.dp))
                 Text("Pegar HTML")
               }
+            }
+
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+              OutlinedButton(
+                onClick = {
+                  jsonFilePicker.launch(arrayOf("application/json", "text/plain", "*/*"))
+                },
+                modifier = Modifier.weight(1f),
+              ) {
+                Icon(Icons.Default.UploadFile, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Archivo JSON")
+              }
+
+              Button(
+                onClick = {
+                  htmlFilePicker.launch(arrayOf("text/html", "application/xhtml+xml", "text/plain", "*/*"))
+                },
+                modifier = Modifier.weight(1f),
+              ) {
+                Icon(Icons.Default.UploadFile, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Archivo HTML")
+              }
+            }
+
+            importedHtmlFileName?.let { fileName ->
+              Text(
+                text = "HTML importado: $fileName",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+              )
+            }
+
+            fileImportError?.let { err ->
+              Text(
+                text = err,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.error,
+              )
             }
 
             OutlinedTextField(
@@ -667,4 +751,29 @@ private fun HtmlVerMasDialog(
       )
     }
   }
+}
+
+private fun readTextFileFromUri(context: Context, uri: Uri): Pair<String, String>? {
+  return runCatching {
+    val fileName = context.contentResolver.query(
+      uri,
+      arrayOf(OpenableColumns.DISPLAY_NAME),
+      null,
+      null,
+      null,
+    )?.use { cursor ->
+      if (cursor.moveToFirst()) {
+        val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+        if (idx >= 0) cursor.getString(idx) else null
+      } else {
+        null
+      }
+    } ?: uri.lastPathSegment.orEmpty().ifBlank { "archivo.html" }
+
+    val content = context.contentResolver.openInputStream(uri)?.use { stream ->
+      stream.bufferedReader(Charsets.UTF_8).readText()
+    } ?: return null
+
+    fileName to content
+  }.getOrNull()
 }
