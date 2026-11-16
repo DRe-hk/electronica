@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material.icons.filled.Visibility
@@ -85,9 +86,23 @@ fun CatalogScreen(
   onSaveItem: (CatalogAppliance) -> Unit,
   onDeleteItem: (CatalogAppliance) -> Unit,
   onViewHtml: (CatalogAppliance?) -> Unit,
+  onExportDatabase: (Uri) -> Unit,
+  onImportDatabase: (Uri) -> Unit,
   onDismissStatus: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
+  val exportDbPicker = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.CreateDocument("application/octet-stream"),
+  ) { uri: Uri? ->
+    if (uri != null) onExportDatabase(uri)
+  }
+
+  val importDbPicker = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.OpenDocument(),
+  ) { uri: Uri? ->
+    if (uri != null) onImportDatabase(uri)
+  }
+
   Column(
     modifier = modifier
       .fillMaxSize()
@@ -139,6 +154,30 @@ fun CatalogScreen(
           onClick = { onSelectTypeFilter(tipo) },
           label = { Text(tipo) },
         )
+      }
+    }
+
+    // Export / Import SQLite database actions
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+      OutlinedButton(
+        onClick = { exportDbPicker.launch("electro_catalogo.db") },
+        modifier = Modifier.weight(1f),
+      ) {
+        Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(4.dp))
+        Text("Exportar BD")
+      }
+
+      OutlinedButton(
+        onClick = { importDbPicker.launch(arrayOf("*/*")) },
+        modifier = Modifier.weight(1f),
+      ) {
+        Icon(Icons.Default.UploadFile, contentDescription = null, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(4.dp))
+        Text("Importar BD")
       }
     }
 

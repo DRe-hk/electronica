@@ -119,6 +119,8 @@ fun ElectroRegistroApp(
           onSaveItem = viewModel::saveAppliance,
           onDeleteItem = viewModel::deleteAppliance,
           onViewHtml = viewModel::viewHtmlForItem,
+          onExportDatabase = viewModel::exportDatabaseToUri,
+          onImportDatabase = viewModel::importDatabaseFromUri,
           onDismissStatus = viewModel::dismissCatalogStatus,
           modifier = Modifier.padding(innerPadding),
         )

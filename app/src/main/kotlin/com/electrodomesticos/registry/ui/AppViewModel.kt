@@ -1,6 +1,7 @@
 package com.electrodomesticos.registry.ui
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.electrodomesticos.registry.data.local.ApplianceSqliteRepository
@@ -147,6 +148,44 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
   fun viewHtmlForItem(item: CatalogAppliance?) {
     _catalogState.update { it.copy(viewingHtmlItem = item) }
+  }
+
+  fun exportDatabaseToUri(uri: Uri) {
+    viewModelScope.launch(Dispatchers.IO) {
+      val result = runCatching {
+        val resolver = getApplication<Application>().contentResolver
+        resolver.openOutputStream(uri)?.use { out ->
+          sqliteRepository.exportDatabaseTo(out)
+        } ?: error("No se pudo abrir el archivo de destino.")
+      }
+      _catalogState.update {
+        it.copy(
+          statusMessage = result.fold(
+            onSuccess = { "Base de datos SQLite exportada correctamente." },
+            onFailure = { err -> "Error al exportar BD: ${err.localizedMessage ?: "desconocido"}" },
+          ),
+        )
+      }
+    }
+  }
+
+  fun importDatabaseFromUri(uri: Uri) {
+    viewModelScope.launch(Dispatchers.IO) {
+      val result = runCatching {
+        val resolver = getApplication<Application>().contentResolver
+        resolver.openInputStream(uri)?.use { input ->
+          sqliteRepository.importDatabaseFrom(input, replaceExisting = true)
+        } ?: error("No se pudo abrir el archivo seleccionado.")
+      }
+      _catalogState.update {
+        it.copy(
+          statusMessage = result.fold(
+            onSuccess = { count -> "Base de datos importada ($count producto(s))." },
+            onFailure = { err -> "Error al importar BD: ${err.localizedMessage ?: "archivo inválido"}" },
+          ),
+        )
+      }
+    }
   }
 
   fun dismissCatalogStatus() {
