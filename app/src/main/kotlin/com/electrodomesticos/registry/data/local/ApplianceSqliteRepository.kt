@@ -7,15 +7,20 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import com.electrodomesticos.registry.data.model.CatalogAppliance
 import java.io.Closeable
+import java.io.File
+import java.io.FileInputStream
+import java.io.InputStream
+import java.io.OutputStream
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 class ApplianceSqliteRepository(
   context: Context,
-  dbName: String = DEFAULT_DB_NAME,
+  private val dbName: String = DEFAULT_DB_NAME,
 ) : SQLiteOpenHelper(context.applicationContext, dbName, null, DB_VERSION), Closeable {
 
+  private val appContext = context.applicationContext
   private val _itemsFlow = MutableStateFlow<List<CatalogAppliance>>(emptyList())
   val itemsFlow: StateFlow<List<CatalogAppliance>> = _itemsFlow.asStateFlow()
 
@@ -122,6 +127,77 @@ class ApplianceSqliteRepository(
       args.toTypedArray(),
     ).use { cursor ->
       return readList(cursor)
+    }
+  }
+
+  @Synchronized
+  fun exportDatabaseTo(outputStream: OutputStream) {
+    // Ensure database file is initialized and WAL changes are flushed to disk
+    writableDatabase.rawQuery("PRAGMA wal_checkpoint(FULL)", null).use { it.moveToFirst() }
+    val dbFile = appContext.getDatabasePath(dbName)
+    require(dbFile.exists()) { "La base de datos no existe todavía." }
+    FileInputStream(dbFile).use { input ->
+      input.copyTo(outputStream)
+    }
+    outputStream.flush()
+  }
+
+  @Synchronized
+  fun importDatabaseFrom(inputStream: InputStream, replaceExisting: Boolean = true): Int {
+    val tempFile = File(appContext.cacheDir, "import_db_${System.nanoTime()}.db")
+    return try {
+      tempFile.outputStream().use { out ->
+        inputStream.copyTo(out)
+      }
+
+      val header = ByteArray(16)
+      FileInputStream(tempFile).use { it.read(header) }
+      val magic = String(header, Charsets.US_ASCII)
+      require(magic.startsWith("SQLite format 3")) {
+        "El archivo seleccionado no es una base de datos SQLite válida."
+      }
+
+      val importedItems = SQLiteDatabase.openDatabase(
+        tempFile.absolutePath,
+        null,
+        SQLiteDatabase.OPEN_READONLY,
+      ).use { importedDb ->
+        importedDb.rawQuery(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+          arrayOf(TABLE_CATALOG),
+        ).use { tableCursor ->
+          require(tableCursor.moveToFirst()) {
+            "La base de datos no contiene la tabla '$TABLE_CATALOG'."
+          }
+        }
+
+        importedDb.rawQuery(
+          "SELECT * FROM $TABLE_CATALOG ORDER BY $COL_CREATED_AT ASC, $COL_ID ASC",
+          null,
+        ).use { rowsCursor ->
+          readList(rowsCursor)
+        }
+      }
+
+      val db = writableDatabase
+      db.beginTransaction()
+      try {
+        if (replaceExisting) {
+          db.delete(TABLE_CATALOG, null, null)
+        }
+        for (item in importedItems) {
+          val sanitized = sanitize(item)
+          db.insertOrThrow(TABLE_CATALOG, null, sanitized.toContentValues())
+        }
+        db.setTransactionSuccessful()
+      } finally {
+        db.endTransaction()
+      }
+
+      refreshFlow()
+      importedItems.size
+    } finally {
+      tempFile.delete()
     }
   }
 
