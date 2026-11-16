@@ -11,7 +11,7 @@ Aplicación Android (Kotlin + Jetpack Compose + SQLite) enfocada en el escaneo r
 - Botón único de **Copiar** al portapapeles (sin búsquedas externas automáticas).
 
 ### 2. Catálogo de Electrodomésticos (`Productos`)
-- **Botón `+ Añadir`** en la cabecera para pegar un código **JSON** (características de la fila + enlace de imagen) y un código **HTML** (ficha completa para **Ver más**).
+- **Botón `+ Añadir`** en la cabecera para pegar o **importar archivos `.json` y `.html`** directamente desde el almacenamiento del teléfono.
 - Cada fila muestra:
   - **Imagen** cargada desde la URL del JSON
   - **Tipo** (Refrigerador, TV, Lavadora, Congeladora, etc.)
